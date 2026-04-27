@@ -1,7 +1,11 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
-const client = new OpenAI();
+// Instantiated inside the handler so the missing-key error surfaces at
+// request time (with a clean 500) rather than crashing the build.
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 const SYSTEM_PROMPT = `You are an expert PM interview coach.
 
@@ -44,7 +48,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [
