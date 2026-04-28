@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { saveSession, loadSessions } from "@/lib/sessions";
 
 const COMPANIES = ["Google", "Meta", "Amazon", "Microsoft"] as const;
 type Company = (typeof COMPANIES)[number];
@@ -16,6 +18,8 @@ type Feedback = {
 };
 
 type PageState = "idle" | "loading" | "done" | "error";
+
+const DRAFT_KEY = "pm_coach_draft";
 
 const TYPE_META: Record<QuestionType, { label: string; badge: string; color: string }> = {
   behavioral:    { label: "Behavioral",     badge: "🗣️", color: "bg-violet-50 text-violet-700 border-violet-200" },
@@ -53,6 +57,37 @@ export default function Home() {
   const [state, setState] = useState<PageState>("idle");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [sessionCount, setSessionCount] = useState(0);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  // Restore draft from localStorage after mount (client-only)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.company) setCompany(d.company);
+        if (d.question) setQuestion(d.question);
+        if (d.answer) setAnswer(d.answer);
+        if (d.feedback) {
+          setFeedback(d.feedback);
+          setState("done");
+        }
+      }
+    } catch {}
+    setSessionCount(loadSessions().length);
+    setDraftLoaded(true);
+  }, []);
+
+  // Persist draft whenever form content changes (after initial restore)
+  useEffect(() => {
+    if (!draftLoaded) return;
+    if (!company && !question && !answer && !feedback) {
+      localStorage.removeItem(DRAFT_KEY);
+      return;
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ company, question, answer, feedback }));
+  }, [draftLoaded, company, question, answer, feedback]);
 
   const canSubmit = company !== "" && question.trim() !== "" && answer.trim() !== "";
   const isLocked = state === "loading" || state === "done";
@@ -75,6 +110,17 @@ export default function Home() {
       const data: Feedback = await res.json();
       setFeedback(data);
       setState("done");
+      saveSession({
+        company,
+        question,
+        answer,
+        questionType: data.question_type,
+        dims: [data.dim1, data.dim2, data.dim3],
+        avgScore: Math.round(
+          (data.dim1.score + data.dim2.score + data.dim3.score) / 3
+        ),
+      });
+      setSessionCount(loadSessions().length);
     } catch {
       setErrorMsg("Something went wrong. Please try again.");
       setState("error");
@@ -88,6 +134,7 @@ export default function Home() {
     setState("idle");
     setFeedback(null);
     setErrorMsg("");
+    localStorage.removeItem(DRAFT_KEY);
   }
 
   const dims = feedback ? [feedback.dim1, feedback.dim2, feedback.dim3] : [];
@@ -101,9 +148,25 @@ export default function Home() {
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 bg-white border border-slate-200 rounded-full px-4 py-1.5 text-sm text-slate-500 font-medium mb-4 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
-            PM Interview Coach
+          <div className="flex items-center justify-between mb-4">
+            <div className="inline-flex items-center gap-2 bg-white border border-slate-200 rounded-full px-4 py-1.5 text-sm text-slate-500 font-medium shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+              PM Interview Coach
+            </div>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-full px-3.5 py-1.5 shadow-sm transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              View Dashboard
+              {sessionCount > 0 && (
+                <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">
+                  {sessionCount}
+                </span>
+              )}
+            </Link>
           </div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
             Practice Your Interview Answer
@@ -215,14 +278,12 @@ export default function Home() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-900">Feedback</h2>
-                  {/* Question type badge */}
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${typeMeta.color}`}>
                     {typeMeta.badge} {typeMeta.label}
                   </span>
                 </div>
                 <p className="text-sm text-slate-500">{company} — {question}</p>
               </div>
-              {/* Avg score circle */}
               {avgScore !== null && (
                 <div className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-16 rounded-full border-2 ${scoreBadgeColor(avgScore)} border-current`}>
                   <span className="text-2xl font-bold leading-none">{avgScore}</span>
@@ -253,12 +314,20 @@ export default function Home() {
                 </div>
               ))}
 
-              <button
-                onClick={handleReset}
-                className="mt-2 w-full py-3 px-6 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
-              >
-                Try Another Answer
-              </button>
+              <div className="mt-2 flex gap-3">
+                <button
+                  onClick={handleReset}
+                  className="flex-1 py-3 px-6 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
+                >
+                  New Question
+                </button>
+                <Link
+                  href="/dashboard"
+                  className="flex-1 py-3 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition text-center"
+                >
+                  View Dashboard
+                </Link>
+              </div>
             </div>
           </div>
         )}
