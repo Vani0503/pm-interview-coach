@@ -168,8 +168,9 @@ export default function Home() {
               )}
             </Link>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight inline-flex items-center gap-2">
             Practice Your Interview Answer
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 border border-indigo-200 align-middle">Beta</span>
           </h1>
           <p className="mt-2 text-slate-500 text-base">
             Submit your answer and get instant AI feedback.
